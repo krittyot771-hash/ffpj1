@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AR English Speaking Game</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Mitr:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Mitr', sans-serif; }
+        
+        /* Custom Glassmorphism Utilities */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.35);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+
+    <!-- MediaPipe and Confetti Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+</head>
+<body class="h-screen w-screen overflow-hidden bg-gradient-to-br from-pink-300 via-rose-200 to-orange-200 text-gray-800 relative">
+
+    <!-- Custom Message Box for Alerts -->
+    <div id="message-box" class="fixed top-4 left-1/2 transform -translate-x-1/2 z-[100] hidden flex-row items-center px-6 py-3 rounded-full shadow-lg transition-all duration-300 bg-white/90 backdrop-blur-md">
+        <span id="message-text" class="text-sm font-medium">Message</span>
+    </div>
+
+    <!-- Start Screen Overlay -->
+    <div id="start-overlay" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+        <div class="glass-panel rounded-3xl p-8 md:p-12 text-center max-w-md w-[90%] flex flex-col items-center">
+            <h1 class="text-3xl md:text-4xl font-bold text-pink-600 mb-4 drop-shadow-sm">Speech AR Game</h1>
+            <p class="text-gray-700 mb-8 font-medium">ฝึกพูดภาษาอังกฤษให้เป๊ะ!<br>ระบบต้องการสิทธิ์เข้าถึง <strong>กล้อง</strong> และ <strong>ไมโครโฟน</strong></p>
+            <button onclick="initGame()" class="w-full bg-gradient-to-r from-pink-500 to-orange-400 hover:from-pink-600 hover:to-orange-500 text-white font-semibold py-4 px-8 rounded-full shadow-lg transform hover:scale-105 transition-all duration-300 text-xl">
+                เริ่มเล่นเกม!
+            </button>
+        </div>
+    </div>
+
+    <!-- End Screen Overlay -->
+    <div id="end-overlay" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60 backdrop-blur-md">
+        <div class="glass-panel rounded-3xl p-10 md:p-16 text-center max-w-lg w-[90%] flex flex-col items-center">
+            <h2 class="text-4xl font-bold text-white mb-2 drop-shadow-md">สรุปคะแนน</h2>
+            <div id="final-score" class="text-7xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500 my-6 drop-shadow-xl">0/10</div>
+            <p id="end-message" class="text-xl text-white mb-10 font-medium"></p>
+            <button onclick="location.reload()" class="bg-white text-pink-600 hover:bg-gray-100 font-bold py-4 px-10 rounded-full shadow-xl transform hover:scale-105 transition-all duration-300 text-xl">
+                เล่นใหม่อีกครั้ง
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Application UI -->
+    <div id="app" class="flex flex-col md:flex-row h-full w-full">
+        
+        <!-- Left Side: Game UI -->
+        <div class="relative w-full h-[55%] md:h-full md:w-1/2 flex items-center justify-center p-4 md:p-8 z-10">
+            <div class="glass-panel rounded-3xl w-full max-w-lg p-6 md:p-10 flex flex-col items-center text-center">
+                
+                <!-- Header (Progress & Score) -->
+                <div class="w-full flex justify-between items-center mb-6 text-sm md:text-base">
+                    <div class="bg-white/60 px-4 py-2 rounded-2xl shadow-sm font-semibold border border-white/50">
+                        ข้อที่: <span id="word-progress" class="text-pink-600 text-lg md:text-xl ml-1">1/10</span>
+                    </div>
+                    <div class="bg-white/60 px-4 py-2 rounded-2xl shadow-sm font-semibold border border-white/50">
+                        คะแนน: <span id="score-display" class="text-pink-600 text-lg md:text-xl ml-1">0</span>
+                    </div>
+                </div>
+
+                <!-- Vocabulary Area -->
+                <div class="my-6 md:my-10 flex flex-col items-center justify-center min-h-[120px]">
+                    <h1 id="en-word" class="text-5xl md:text-7xl font-bold text-gray-800 mb-2 drop-shadow-sm tracking-wide transition-opacity duration-300">Word</h1>
+                    <p id="th-word" class="text-xl md:text-2xl text-pink-700 font-medium">คำแปล</p>
+                </div>
+
+                <!-- Status Badge -->
+                <div id="status-badge" class="px-6 py-2 rounded-full text-white font-medium shadow-md transition-colors duration-300 bg-gray-400 mb-6 text-base md:text-lg min-w-[200px]">
+                    รอเริ่มเกม...
+                </div>
+
+                <!-- Accuracy Meter Bar -->
+                <div class="mt-4 w-full">
+                    <div class="flex justify-between text-xs md:text-sm font-semibold text-gray-700 mb-2">
+                        <span>ความแม่นยำ (Accuracy)</span>
+                        <span id="meter-text">0%</span>
+                    </div>
+                    <div class="w-full bg-white/50 rounded-full h-6 md:h-8 shadow-inner border border-white/60 overflow-hidden relative">
+                        <div id="meter-fill" class="h-full bg-blue-400 w-0 transition-all duration-700 ease-out"></div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Right Side: AR Camera Viewport -->
+        <!-- Hidden video element for MediaPipe input -->
+        <video id="input_video" class="hidden" autoplay playsinline></video>
+        
+        <div class="relative w-full h-[45%] md:h-full md:w-1/2 bg-black flex-shrink-0 shadow-[-10px_0_30px_rgba(0,0,0,0.1)] overflow-hidden">
+            <!-- Canvas to draw Face Mesh and AR Overlay. Sized via CSS to cover container. Mirrored with -scale-x-100 -->
+            <canvas id="output_canvas" class="w-full h-full object-cover -scale-x-100"></canvas>
+            
+            <!-- Safe Area Overlay (Optional aesthetic touch) -->
+            <div class="absolute inset-0 border-4 border-white/10 pointer-events-none md:border-l-0"></div>
+        </div>
+    </div>
+
+    <!-- Application Logic -->
+    <script>
+        // ==========================================
+        // 1. DATA & STATE MANAGEMENT
+        // ==========================================
+        const words = [
+            { en: "Hello", th: "สวัสดี" },
+            { en: "Apple", th: "แอปเปิ้ล" },
+            { en: "Beautiful", th: "สวยงาม" },
+            { en: "Elephant", th: "ช้าง" },
+            { en: "Butterfly", th: "ผีเสื้อ" },
+            { en: "Pineapple", th: "สับปะรด" },
+            { en: "Strawberry", th: "สตรอว์เบอร์รี" },
+            { en: "Wonderful", th: "ยอดเยี่ยม" },
+            { en: "Delicious", th: "อร่อย" },
+            { en: "Adventure", th: "การผจญภัย" }
+        ];
+
+        let currentWordIndex = 0;
+        let score = 0;
+        let isListening = false;
+        let arState = 'none'; // 'none', 'correct', 'wrong'
+        let listeningTimeout;
+        let recognition;
+        
+        // Audio Context (Synthesizer)
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        let audioCtx;
+
+        // ==========================================
+        // 2. AUDIO SYSTEM (Web Audio API Synthesizer)
+        // ==========================================
+        function initAudio() {
+            if (!audioCtx) audioCtx = new AudioContext();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        function playTone(freq, type, duration, vol = 0.5, startTime = null) {
+            if (!audioCtx) return;
+            const t = startTime !== null ? startTime : audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, t);
+            
+            gain.gain.setValueAtTime(vol, t);
+            gain.gain.exponentialRampToValueAtTime(0.01, t + duration);
+            
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            osc.start(t);
+            osc.stop(t + duration);
+        }
+
+        function soundClick() { playTone(600, 'sine', 0.1, 0.2); }
+        function soundTick() { playTone(440, 'square', 0.1, 0.1); }
+        function soundGo() { playTone(880, 'sine', 0.3, 0.2); }
+        
+        function soundCorrect() {
+            if (!audioCtx) return;
+            let t = audioCtx.currentTime;
+            playTone(523.25, 'sine', 0.2, 0.3, t);       // C5
+            playTone(659.25, 'sine', 0.2, 0.3, t + 0.1); // E5
+            playTone(783.99, 'sine', 0.4, 0.3, t + 0.2); // G5
+        }
+
+        function soundWrong() {
+            if (!audioCtx) return;
+            let t = audioCtx.currentTime;
+            playTone(150, 'sawtooth', 0.4, 0.3, t);
+            playTone(100, 'sawtooth', 0.4, 0.3, t + 0.2);
+        }
+
+        function soundWarning() {
+            if (!audioCtx) return;
+            let t = audioCtx.currentTime;
+            playTone(300, 'triangle', 0.2, 0.3, t);
+            playTone(300, 'triangle', 0.2, 0.3, t + 0.3);
+        }
+
+        function soundFanfare() {
+            if (!audioCtx) return;
+            let t = audioCtx.currentTime;
+            playTone(261.63, 'square', 0.2, 0.3, t);       // C4
+            playTone(329.63, 'square', 0.2, 0.3, t + 0.2); // E4
+            playTone(392.00, 'square', 0.2, 0.3, t + 0.4); // G4
+            playTone(523.25, 'square', 0.6, 0.3, t + 0.6); // C5
+        }
+
+        function soundGameOver() {
+            if (!audioCtx) return;
+            let t = audioCtx.currentTime;
+            playTone(261.63, 'sawtooth', 0.3, 0.3, t);       // C4
+            playTone(196.00, 'sawtooth', 0.3, 0.3, t + 0.3); // G3
+            playTone(146.83, 'sawtooth', 0.3, 0.3, t + 0.6); // D3
+            playTone(130.81, 'sawtooth', 0.8, 0.3, t + 0.9); // C3
+        }
+
+
+        // ==========================================
+        // 3. UTILITIES & UI UPDATES
+        // ==========================================
+        function showMessage(text, isError = false) {
+            const box = document.getElementById('message-box');
+            const msg = document.getElementById('message-text');
+            msg.textContent = text;
+            
+            if(isError) {
+                box.classList.replace('bg-white/90', 'bg-red-100/90');
+                msg.classList.add('text-red-700');
+                msg.classList.remove('text-gray-800');
+            } else {
+                box.classList.replace('bg-red-100/90', 'bg-white/90');
+                msg.classList.add('text-gray-800');
+                msg.classList.remove('text-red-700');
+            }
+            
+            box.classList.remove('hidden');
+            box.classList.add('flex');
+            
+            setTimeout(() => {
+                box.classList.add('hidden');
+                box.classList.remove('flex');
+            }, 3000);
+        }
+
+        function updateStatus(text, colorClass, animationClass = '') {
+            const badge = document.getElementById('status-badge');
+            badge.textContent = text;
+            badge.className = `px-6 py-2 rounded-full text-white font-medium shadow-md transition-colors duration-300 text-base md:text-lg min-w-[200px] ${colorClass} ${animationClass}`;
+        }
+
+
+        // ==========================================
+        // 4. SPEECH RECOGNITION & ALGORITHMS
+        // ==========================================
+        
+        // Levenshtein Distance for Similarity Score
+        function editDistance(s1, s2) {
+            s1 = s1.toLowerCase();
+            s2 = s2.toLowerCase();
+            let costs = new Array();
+            for (let i = 0; i <= s1.length; i++) {
+                let lastValue = i;
+                for (let j = 0; j <= s2.length; j++) {
+                    if (i == 0) costs[j] = j;
+                    else {
+                        if (j > 0) {
+                            let newValue = costs[j - 1];
+                            if (s1.charAt(i - 1) != s2.charAt(j - 1))
+                                newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
+                            costs[j - 1] = lastValue;
+                            lastValue = newValue;
+                        }
+                    }
+                }
+                if (i > 0) costs[s2.length] = lastValue;
+            }
+            return costs[s2.length];
+        }
+
+        function calculateSimilarity(s1, s2) {
+            let longer = s1;
+            let shorter = s2;
+            if (s1.length < s2.length) { longer = s2; shorter = s1; }
+            let longerLength = longer.length;
+            if (longerLength == 0) return 1.0;
+            return (longerLength - editDistance(longer, shorter)) / parseFloat(longerLength);
+        }
+
+        function initSpeechRecognition() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                showMessage("เบราว์เซอร์ไม่รองรับ Speech Recognition กรุณาใช้ Chrome", true);
+                return;
+            }
+            
+            recognition = new SpeechRecognition();
+            recognition.lang = 'en-US';
+            recognition.interimResults = false;
+            recognition.maxAlternatives = 1;
+
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                if (isListening) handleSpeechResult(transcript);
+            };
+
+            recognition.onerror = (event) => {
+                if (event.error !== 'no-speech' && event.error !== 'aborted') {
+                    console.warn("Speech API Error:", event.error);
+                }
+            };
+
+            recognition.onend = () => {
+                // If it ended naturally without resolving, handled by timeout
+            };
+        }
+
+
+        // ==========================================
+        // 5. GAME LOOP LOGIC
+        // ==========================================
+        async function initGame() {
+            initAudio();
+            soundClick();
+
+            // Request Permissions
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                stream.getTracks().forEach(track => track.stop()); // Release to let APIs manage
+                
+                document.getElementById('start-overlay').classList.add('hidden');
+                
+                initSpeechRecognition();
+                startMediaPipe();
+                resetGame();
+            } catch (err) {
+                showMessage("กรุณาอนุญาตให้ระบบเข้าถึงกล้องและไมโครโฟน", true);
+            }
+        }
+
+        function resetGame() {
+            currentWordIndex = 0;
+            score = 0;
+            document.getElementById('score-display').textContent = score;
+            playTurn();
+        }
+
+        function playTurn() {
+            arState = 'none'; // Clear AR effects
+            isListening = false;
+            
+            // Reset Meter
+            const meterFill = document.getElementById('meter-fill');
+            const meterText = document.getElementById('meter-text');
+            meterFill.style.width = '0%';
+            meterFill.className = 'h-full bg-blue-400 transition-all duration-700 ease-out w-0';
+            meterText.textContent = '0%';
+
+            // Update UI
+            const wordObj = words[currentWordIndex];
+            document.getElementById('en-word').textContent = wordObj.en;
+            document.getElementById('th-word').textContent = wordObj.th;
+            document.getElementById('word-progress').textContent = `${currentWordIndex + 1}/${words.length}`;
+
+            startCountdown();
+        }
+
+        function startCountdown() {
+            let count = 3;
+            updateStatus(`เตรียมตัว... ${count}`, "bg-pink-400");
+            soundTick();
+            
+            let tickInterval = setInterval(() => {
+                count--;
+                if (count > 0) {
+                    updateStatus(`เตรียมตัว... ${count}`, "bg-pink-400");
+                    soundTick();
+                } else {
+                    clearInterval(tickInterval);
+                    startListening();
+                }
+            }, 1000);
+        }
+
+        function startListening() {
+            if (!recognition) return;
+            
+            isListening = true;
+            updateStatus("พูดเลย! 🎙️ (5 วิ)", "bg-orange-500", "animate-pulse");
+            soundGo();
+            
+            try { recognition.start(); } catch(e) {} // catch if already started
+
+            // 5 Second Timeout for no response
+            listeningTimeout = setTimeout(() => {
+                if (isListening) {
+                    recognition.stop();
+                    handleSpeechTimeout();
+                }
+            }, 5000);
+        }
+
+        function handleSpeechResult(rawTranscript) {
+            clearTimeout(listeningTimeout);
+            recognition.stop();
+            isListening = false;
+
+            const targetWord = words[currentWordIndex].en;
+            const cleanTranscript = rawTranscript.replace(/[^\w\s]/g, "").trim();
+            const cleanTarget = targetWord.toLowerCase().trim();
+            
+            updateStatus(`ได้ยินว่า: "${cleanTranscript || '...'}"`, "bg-blue-500");
+
+            const simScore = calculateSimilarity(cleanTranscript.toLowerCase(), cleanTarget);
+            const percentage = Math.round(simScore * 100);
+
+            animateMeter(percentage, () => {
+                if (percentage >= 80) handleCorrect();
+                else handleWrong();
+            });
+        }
+
+        function handleSpeechTimeout() {
+            isListening = false;
+            updateStatus("ไม่ได้ยินเสียง เริ่มใหม่...", "bg-yellow-500");
+            soundWarning();
+            
+            setTimeout(() => {
+                playTurn(); // Restart current word
+            }, 2000);
+        }
+
+        function animateMeter(targetPercentage, callback) {
+            const meterFill = document.getElementById('meter-fill');
+            const meterText = document.getElementById('meter-text');
+            
+            meterFill.style.width = `${targetPercentage}%`;
+            
+            // Animate number
+            let current = 0;
+            const step = Math.max(1, Math.floor(targetPercentage / 20));
+            const timer = setInterval(() => {
+                current += step;
+                if (current >= targetPercentage) {
+                    current = targetPercentage;
+                    clearInterval(timer);
+                }
+                meterText.textContent = `${current}%`;
+            }, 30);
+
+            // Change color based on threshold
+            setTimeout(() => {
+                if (targetPercentage >= 80) {
+                    meterFill.classList.replace('bg-blue-400', 'bg-green-500');
+                } else {
+                    meterFill.classList.replace('bg-blue-400', 'bg-red-500');
+                }
+                setTimeout(callback, 500); // Small pause before resolving
+            }, 700); // Matches CSS transition duration
+        }
+
+        function handleCorrect() {
+            score++;
+            document.getElementById('score-display').textContent = score;
+            
+            updateStatus("เก่งมาก! ถูกต้อง 🎉", "bg-green-500");
+            soundCorrect();
+            arState = 'correct'; // Trigger Crown AR
+            
+            // Confetti Effect
+            confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 }, zIndex: 100 });
+
+            nextTurnDelayed();
+        }
+
+        function handleWrong() {
+            updateStatus("ยังไม่เป๊ะ พยายามใหม่นะ", "bg-red-500");
+            soundWrong();
+            arState = 'wrong'; // Trigger Horns & Vignette AR
+
+            nextTurnDelayed();
+        }
+
+        function nextTurnDelayed() {
+            setTimeout(() => {
+                currentWordIndex++;
+                if (currentWordIndex < words.length) {
+                    playTurn();
+                } else {
+                    endGame();
+                }
+            }, 3000); // Show result & AR for 3 seconds
+        }
+
+        function endGame() {
+            const endOverlay = document.getElementById('end-overlay');
+            const finalScore = document.getElementById('final-score');
+            const endMessage = document.getElementById('end-message');
+            
+            arState = 'none'; // clear camera
+            endOverlay.classList.remove('hidden');
+            endOverlay.classList.add('flex');
+            
+            finalScore.textContent = `${score}/10`;
+            
+            if (score >= 8) {
+                endMessage.textContent = "ยอดเยี่ยม! การออกเสียงของคุณเป๊ะมาก";
+                soundFanfare();
+                let endConfetti = setInterval(() => {
+                    confetti({ particleCount: 50, spread: 60, origin: { y: 0.3 } });
+                }, 1000);
+                setTimeout(() => clearInterval(endConfetti), 4000);
+            } else {
+                endMessage.textContent = "ทำได้ดี! ฝึกฝนอีกนิดนะ";
+                soundGameOver();
+            }
+        }
+
+
+        // ==========================================
+        // 6. MEDIAPIPE FACE MESH & AR ENGINE
+        // ==========================================
+        const videoElement = document.getElementById('input_video');
+        const canvasElement = document.getElementById('output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+
+        function startMediaPipe() {
+            const faceMesh = new FaceMesh({locateFile: (file) => {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+            }});
+            
+            faceMesh.setOptions({
+                maxNumFaces: 1,
+                refineLandmarks: false,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+            
+            faceMesh.onResults(onResults);
+
+            const camera = new Camera(videoElement, {
+                onFrame: async () => {
+                    await faceMesh.send({image: videoElement});
+                },
+                width: 1280,
+                height: 720,
+                facingMode: 'user'
+            });
+            
+            camera.start();
+        }
+
+        function onResults(results) {
+            // Match canvas internal resolution to video stream resolution
+            if(canvasElement.width !== videoElement.videoWidth) {
+                canvasElement.width = videoElement.videoWidth;
+                canvasElement.height = videoElement.videoHeight;
+            }
+
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            
+            // Draw Video Frame (Canvas handles mirroring via CSS -scale-x-100)
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+            // Draw AR Effects based on current state
+            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                const landmarks = results.multiFaceLandmarks[0];
+                
+                // Using FaceMesh Landmark indices: 
+                // 10 = top of forehead, 152 = bottom of chin
+                const pt10 = landmarks[10];
+                const pt152 = landmarks[152];
+                
+                const hx = pt10.x * canvasElement.width;
+                const hy = pt10.y * canvasElement.height;
+                const faceHeight = Math.abs((pt152.y - pt10.y) * canvasElement.height);
+                const size = faceHeight * 0.8; // Relative to face size
+
+                if (arState === 'correct') {
+                    drawCrown(canvasCtx, hx, hy - (size * 0.25), size);
+                } else if (arState === 'wrong') {
+                    drawHorns(canvasCtx, hx, hy + (size * 0.1), size);
+                }
+            }
+
+            // Apply Vignette if Wrong
+            if (arState === 'wrong') {
+                drawVignette(canvasCtx, canvasElement.width, canvasElement.height);
+            }
+
+            canvasCtx.restore();
+        }
+
+        // --- AR Drawing Functions ---
+
+        function drawCrown(ctx, x, y, size) {
+            const w = size;
+            const h = size * 0.6;
+            ctx.save();
+            ctx.translate(x, y);
+            
+            // Base gold crown shape
+            ctx.beginPath();
+            ctx.moveTo(-w/2, h/2);
+            ctx.lineTo(-w*0.6, -h/2);
+            ctx.lineTo(-w*0.2, -h*0.1);
+            ctx.lineTo(0, -h*0.8);
+            ctx.lineTo(w*0.2, -h*0.1);
+            ctx.lineTo(w*0.6, -h/2);
+            ctx.lineTo(w/2, h/2);
+            ctx.closePath();
+            
+            ctx.fillStyle = '#FFD700'; // Gold
+            ctx.fill();
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#DAA520'; // Dark Goldenrod
+            ctx.stroke();
+
+            // Crown Jewels
+            ctx.fillStyle = '#FF0055'; // Pink/Red jewel
+            ctx.beginPath(); ctx.arc(0, -h*0.4, size*0.09, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = '#00AAFF'; // Blue jewel
+            ctx.beginPath(); ctx.arc(-w*0.35, -h*0.15, size*0.06, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(w*0.35, -h*0.15, size*0.06, 0, Math.PI*2); ctx.fill();
+            
+            ctx.restore();
+        }
+
+        function drawHorns(ctx, x, y, size) {
+            const spread = size * 0.45;
+            const h = size * 0.55;
+
+            ctx.save();
+            ctx.translate(x, y);
+            
+            ctx.fillStyle = '#C80000'; // Devil Red
+            ctx.strokeStyle = '#500000';
+            ctx.lineWidth = 2;
+
+            // Left Horn
+            ctx.beginPath();
+            ctx.moveTo(-spread*0.3, 0); 
+            ctx.quadraticCurveTo(-spread*0.8, -h*0.5, -spread*0.9, -h); // Curve to tip
+            ctx.quadraticCurveTo(-spread*0.5, -h*0.3, -spread*0.1, -h*0.1); // Curve to inner base
+            ctx.closePath();
+            ctx.fill(); ctx.stroke();
+
+            // Right Horn
+            ctx.beginPath();
+            ctx.moveTo(spread*0.3, 0); 
+            ctx.quadraticCurveTo(spread*0.8, -h*0.5, spread*0.9, -h); 
+            ctx.quadraticCurveTo(spread*0.5, -h*0.3, spread*0.1, -h*0.1); 
+            ctx.closePath();
+            ctx.fill(); ctx.stroke();
+            
+            ctx.restore();
+        }
+
+        function drawVignette(ctx, w, h) {
+            const gradient = ctx.createRadialGradient(
+                w / 2, h / 2, h * 0.2, 
+                w / 2, h / 2, Math.max(w, h) * 0.75
+            );
+            gradient.addColorStop(0, 'rgba(0,0,0,0)');
+            gradient.addColorStop(0.5, 'rgba(80,0,0,0.4)');
+            gradient.addColorStop(1, 'rgba(120,0,0,0.85)');
+            
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, w, h);
+        }
+
+    </script>
+</body>
+</html>
